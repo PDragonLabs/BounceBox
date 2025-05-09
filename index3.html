@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Target Shooter</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: sans-serif; color: #fff;}
+        canvas { display: block; }
+        #game-ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10; /* Ensure UI is above the canvas */
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #game-status {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 20; /* Ensure status is above everything */
+            display: none; /* Hidden by default */
+        }
+        #game-status button {
+             padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #555;
+            color: white;
+            font-size: 1.2em;
+            margin-top: 10px;
+        }
+        #game-status button:hover {
+            background-color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-ui">
+        <h2>Score: <span id="score">0</span></h2>
+        <h2>Time: <span id="time">60</span></h2>
+    </div>
+
+    <div id="game-status">
+        <h2 id="status-message"></h2>
+        <button id="restart-button">Restart Game</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script> <script>
+        console.log("Game script started.");
+
+        // Set up the scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(0x1a1a1a, 1);
+        document.body.appendChild(renderer.domElement);
+
+        console.log("Renderer canvas appended to body.");
+
+        // Add OrbitControls for camera interaction (limited for a shooter view)
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.25;
+        controls.screenSpacePanning = false;
+        controls.maxPolarAngle = Math.PI / 2; // Prevent looking straight up or down
+        controls.enableZoom = false; // Disable zooming
+        controls.enablePan = false; // Disable panning
+
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x404040, 5);
+        scene.add(ambientLight);
+
+        // Add directional light
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(1, 1, 1).normalize();
+        scene.add(directionalLight);
+
+        // Create the box geometry (still using it for boundaries, but not visible)
+        const boxSize = 10;
+        // We won't add the box mesh to the scene for the shooter game,
+        // but we'll use boxSize for boundary checks.
+
+        // Array to hold the target objects
+        const targets = [];
+        const initialTargetCount = 10; // Number of targets at the start
+
+        // Game variables
+        let score = 0;
+        let gameTime = 60; // seconds
+        let gameInterval;
+        let gameState = 'start'; // 'start', 'playing', 'gameover'
+
+        // UI Elements
+        const scoreElement = document.getElementById('score');
+        const timeElement = document.getElementById('time');
+        const gameStatusElement = document.getElementById('game-status');
+        const statusMessageElement = document.getElementById('status-message');
+        const restartButton = document.getElementById('restart-button');
+
+        // Raycaster for shooting
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Sound effects (using Howler.js)
+        const shootSound = new Howl({
+            src: ['https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/sounds/gun.ogg'], // Example shoot sound
+            volume: 0.3
+        });
+
+        const hitSound = new Howl({
+            src: ['https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/sounds/hit.mp3'], // Example hit sound
+            volume: 0.5
+        });
+
+         const gameOverSound = new Howl({
+            src: ['https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/sounds/gameover.mp3'], // Example game over sound
+            volume: 0.7
+        });
+
+
+        // Function to create a random color
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        // Function to create a new target object
+        function createTarget() {
+            let geometry;
+            const objectType = Math.random();
+
+            if (objectType < 0.25) {
+                geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            } else if (objectType < 0.5) {
+                geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+            } else if (objectType < 0.75) {
+                geometry = new THREE.TorusGeometry(0.4, 0.2, 16, 32);
+            } else {
+                geometry = new THREE.DodecahedronGeometry(0.6);
+            }
+
+            const material = new THREE.MeshPhongMaterial({ color: getRandomColor() }); // Using Phong for simplicity, can use Standard if needed
+            const target = new THREE.Mesh(geometry, material);
+
+            // Set initial random position within the box boundaries
+            target.position.x = (Math.random() - 0.5) * (boxSize - 2);
+            target.position.y = (Math.random() - 0.5) * (boxSize - 2);
+            target.position.z = (Math.random() - 0.5) * (boxSize - 2);
+
+            // Set random velocity (targets will still bounce)
+            target.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.05,
+                (Math.random() - 0.5) * 0.05,
+                (Math.random() - 0.5) * 0.05
+            );
+
+             // Set random rotation speed
+            target.rotationSpeed = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.02,
+                (Math.random() - 0.5) * 0.02,
+                (Math.random() - 0.5) * 0.02
+            );
+
+
+            scene.add(target);
+            targets.push(target);
+            console.log("Target added. Total targets:", targets.length);
+        }
+
+        // Function to remove a target
+        function removeTarget(target) {
+            const index = targets.indexOf(target);
+            if (index !== -1) {
+                targets.splice(index, 1);
+                scene.remove(target);
+                // Dispose of geometry and material to free up memory
+                target.geometry.dispose();
+                target.material.dispose();
+                console.log("Target removed. Total targets:", targets.length);
+            }
+        }
+
+        // Function to start the game
+        function startGame() {
+            score = 0;
+            gameTime = 60;
+            scoreElement.textContent = score;
+            timeElement.textContent = gameTime;
+            gameState = 'playing';
+            gameStatusElement.style.display = 'none';
+
+            // Remove any existing targets
+            targets.forEach(target => {
+                scene.remove(target);
+                 target.geometry.dispose();
+                 target.material.dispose();
+            });
+            targets.length = 0; // Clear the array
+
+            // Create initial targets
+            for (let i = 0; i < initialTargetCount; i++) {
+                createTarget();
+            }
+
+            // Start the game timer
+            gameInterval = setInterval(() => {
+                gameTime--;
+                timeElement.textContent = gameTime;
+                if (gameTime <= 0) {
+                    endGame();
+                }
+            }, 1000);
+
+            console.log("Game started.");
+        }
+
+        // Function to end the game
+        function endGame() {
+            gameState = 'gameover';
+            clearInterval(gameInterval);
+            statusMessageElement.textContent = `Game Over! Your score: ${score}`;
+            gameStatusElement.style.display = 'flex'; // Show game over screen
+            gameOverSound.play();
+            console.log("Game over.");
+        }
+
+        // Handle mouse click for shooting
+        function onMouseClick(event) {
+            if (gameState !== 'playing') return; // Only shoot when playing
+
+            // Calculate mouse position in normalized device coordinates (-1 to +1)
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update the picking ray with the camera and mouse position
+            raycaster.setFromCamera(mouse, camera);
+
+            // Calculate objects intersecting the picking ray
+            const intersects = raycaster.intersectObjects(targets);
+
+            if (intersects.length > 0) {
+                // Hit a target!
+                const hitTarget = intersects[0].object;
+                console.log("Hit target:", hitTarget);
+                hitSound.play();
+                score += 10; // Increase score
+                scoreElement.textContent = score;
+                removeTarget(hitTarget); // Remove the hit target
+
+                // Optional: Add a new target to keep the game going
+                createTarget();
+            } else {
+                // Missed
+                console.log("Missed.");
+                shootSound.play();
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update OrbitControls
+            controls.update();
+
+            // Update target positions and rotations (they still bounce)
+            if (gameState === 'playing') {
+                targets.forEach(target => {
+                    // Apply gravity (optional, can remove if you don't want gravity in shooter)
+                    // target.velocity.add(gravity);
+
+                    // Update position
+                    target.position.add(target.velocity);
+
+                    // Bounce off the box walls (considering object size)
+                    const halfBox = boxSize / 2;
+                    const objectSize = new THREE.Box3().setFromObject(target).getSize(new THREE.Vector3());
+                    const objectRadius = Math.max(objectSize.x, objectSize.y, objectSize.z) / 2;
+
+                    if (target.position.x > halfBox - objectRadius || target.position.x < -halfBox + objectRadius) {
+                        target.velocity.x *= -1;
+                        target.position.x = Math.max(-halfBox + objectRadius, Math.min(halfBox - objectRadius, target.position.x));
+                         // bounceSound.play(); // Play sound on bounce if gravity is off
+                    }
+                    if (target.position.y > halfBox - objectRadius || target.position.y < -halfBox + objectRadius) {
+                        target.velocity.y *= -1;
+                        target.position.y = Math.max(-halfBox + objectRadius, Math.min(halfBox - objectRadius, target.position.y));
+                         // bounceSound.play(); // Play sound on bounce if gravity is off
+                    }
+                    if (target.position.z > halfBox - objectRadius || target.position.z < -halfBox + objectRadius) {
+                        target.velocity.z *= -1;
+                        target.position.z = Math.max(-halfBox + objectRadius, Math.min(halfBox - objectRadius, target.position.z));
+                         // bounceSound.play(); // Play sound on bounce if gravity is off
+                    }
+
+                    // Rotate the target
+                    target.rotation.x += target.rotationSpeed.x;
+                    target.rotation.y += target.rotationSpeed.y;
+                    target.rotation.z += target.rotationSpeed.z;
+                });
+            }
+
+
+            // Render the scene with the main camera
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+        });
+
+        // Add event listener for mouse clicks
+        window.addEventListener('click', onMouseClick, false);
+
+        // Add event listener for restart button
+        restartButton.addEventListener('click', startGame);
+
+
+         // Start the animation on window load.
+        window.onload = function () {
+            console.log("Window loaded, starting animation.");
+            animate(); // Start the render loop
+            // Show initial game status to prompt user to start
+            gameState = 'start';
+            statusMessageElement.textContent = "Click 'Restart Game' to Start!";
+            gameStatusElement.style.display = 'flex';
+        }
+
+    </script>
+</body>
+</html>
