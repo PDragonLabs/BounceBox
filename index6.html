@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Star Wars Cockpit Shooter</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Press Start 2P', cursive; color: #00ff00;} /* Black background for space */
+        canvas { display: block; }
+        #game-ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10; /* Ensure UI is above the canvas */
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border: 2px solid #00ff00; /* Green border */
+        }
+         #game-ui h2 {
+            margin: 0;
+            font-size: 1em;
+         }
+
+        #game-status {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 20; /* Ensure status is above everything */
+            display: none; /* Hidden by default */
+            border: 3px solid #00ffff; /* Cyan border */
+            box-shadow: 0 0 20px #00ffff; /* Glow effect */
+        }
+        #game-status h2 {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #00ffff; /* Cyan text */
+        }
+        #game-status button {
+             padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #00ffff; /* Cyan button */
+            color: #000; /* Black text */
+            font-size: 1.2em;
+            margin-top: 20px;
+            font-family: 'Press Start 2P', cursive;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        #game-status button:hover {
+            background-color: #00e0e0; /* Darker cyan on hover */
+            box-shadow: 0 0 10px #00ffff; /* Glow on hover */
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            margin-top: -10px;
+            margin-left: -10px;
+            border: 2px solid #00ff00; /* Green crosshair */
+            border-radius: 50%; /* Optional: make it a circle */
+            box-sizing: border-box;
+            pointer-events: none; /* Allow clicks to pass through */
+            z-index: 15; /* Above canvas, below game status */
+        }
+         #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background-color: #00ff00; /* Green lines */
+         }
+         #crosshair::before {
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            margin-top: -1px;
+         }
+         #crosshair::after {
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 100%;
+            margin-left: -1px;
+         }
+
+         #hypeButton {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #ff0000; /* Red button */
+            color: white;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1em;
+            text-shadow: 1px 1px 2px #000;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+         }
+         #hypeButton:hover {
+            background-color: #cc0000; /* Darker red on hover */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+         }
+         #hypeButton:active {
+            background-color: #990000; /* Even darker red when pressed */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+         }
+
+         #hyperspace-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background-color: #000; /* Black circle */
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 25; /* Ensure it's above everything else */
+            pointer-events: none; /* Allow clicks to pass through when not active */
+            opacity: 0; /* Hidden initially */
+         }
+
+    </style>
+     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-ui">
+        <h2>SCORE: <span id="score">0</span></h2>
+        <h2>TIME: <span id="time">60</span></h2>
+        <button id="hypeButton">HYPE</button>
+    </div>
+
+    <div id="game-status">
+        <h2 id="status-message"></h2>
+        <button id="restart-button">RESTART GAME</button>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="hyperspace-overlay"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+
+    <script>
+        console.log("Game script started.");
+
+        // Check if THREE object is available after loading the library
+        if (typeof THREE === 'undefined') {
+            console.error("THREE.js library not loaded correctly!");
+        } else {
+            console.log("THREE.js library loaded successfully."); // Confirm Three.js is available
+        }
+
+        // --- Sound Effects ---
+        // Note: These sound URLs may have restrictions (e.g., 403 Forbidden errors).
+        // You may need to host these sound files yourself or find alternative public URLs.
+        const shootSound = new Howl({
+            src: ['gun.ogg'], // Updated path to root directory
+            volume: 0.3,
+            onloaderror: function(id, error) { console.error("Error loading shoot sound:", error); }
+        });
+
+        const hitSound = new Howl({
+            src: ['hit.ogg'], // Updated path to root directory
+            volume: 0.5,
+            onloaderror: function(id, error) { console.error("Error loading hit sound:", error); }
+        });
+
+         const gameOverSound = new Howl({
+            src: ['gameover.ogg'], // Updated path to root directory
+            volume: 0.7,
+            onloaderror: function(id, error) { console.error("Error loading game over sound:", error); }
+        });
+
+        const hyperspaceSound = new Howl({
+            src: ['powerup.ogg'], // Updated path to root directory
+            volume: 0.8,
+            onloaderror: function(id, error) { console.error("Error loading hyperspace sound:", error); }
+        });
+        // --- End Sound Effects ---
+
+
+        // Array to hold temporary hyperspace tunnel elements (not used in this version)
+        const hyperspaceTunnelElements = [];
+        const tunnelSegmentCount = 50; // Number of segments in the tunnel
+        const tunnelSegmentLength = 20; // Length of each segment
+        const tunnelRadius = 10; // Radius of the tunnel
+
+        // Array to hold temporary hyperspace line meshes
+        const tempHyperspaceLines = [];
+        const tempHyperspaceLineCount = 2000; // Increased number of temporary lines
+        const tempHyperspaceLineLength = 500; // Increased length of temporary lines
+        const tempHyperspaceLineSpeed = 500; // Increased speed of temporary lines
+
+
+        try {
+            // Set up the scene, camera, and renderer
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x000000, 1); // Black background for space
+            document.body.appendChild(renderer.domElement);
+
+            console.log("Renderer canvas appended to body.");
+
+            // Use PointerLockControls for first-person look around
+            const controls = new THREE.PointerLockControls(camera, document.body);
+
+            // Add event listener to lock pointer when clicking the canvas
+            renderer.domElement.addEventListener('click', () => {
+                console.log("Canvas clicked, attempting to lock pointer."); // Log click
+                controls.lock();
+            });
+
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 5);
+            scene.add(ambientLight);
+
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+            directionalLight.position.set(1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            // --- Starfield (for regular gameplay) ---
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsCount = 10000;
+            const starPositions = new Float32Array(starsCount * 3); // 3 components per star (x, y, z)
+            const starColors = new Float32Array(starsCount * 3); // 3 components per star color (r, g, b)
+            const originalStarPositions = new Float32Array(starsCount * 3); // Store original positions for reset
+
+            for (let i = 0; i < starsCount; i++) {
+                // Position stars randomly in a large sphere or cube
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                starPositions[i * 3] = x;
+                starPositions[i * 3 + 1] = y;
+                starPositions[i * 3 + 2] = z;
+
+                // Store original positions
+                originalStarPositions[i * 3] = x;
+                originalStarPositions[i * 3 + 1] = y;
+                originalStarPositions[i * 3 + 2] = z;
+
+
+                // Random grayscale color for stars
+                const color = Math.random() * 0.5 + 0.5; // Vary brightness
+                starColors[i * 3] = color;
+                starColors[i * 3 + 1] = color;
+                starColors[i * 3 + 2] = color;
+            }
+
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+            starsGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+
+            const starsMaterial = new THREE.PointsMaterial({ size: 1, vertexColors: true }); // Use vertex colors
+            const starField = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starField);
+            console.log("Starfield created.");
+            // --- End Starfield ---
+
+
+            // Array to hold the target objects
+            const targets = [];
+            const initialTargetCount = 15; // More targets for a shooter
+
+            // Array to hold active bullets
+            const bullets = [];
+            const bulletSpeed = 1; // Speed of the bullets
+            const bulletLifespan = 1000; // Milliseconds before bullet is removed
+
+            // Bullet geometry and material
+            const bulletGeometry = new THREE.SphereGeometry(0.1, 8, 8); // Small sphere for bullet
+            const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Yellow color
+
+
+            // Game variables
+            let score = 0;
+            let gameTime = 60; // seconds
+            let gameInterval;
+            let gameState = 'start'; // 'start', 'playing', 'gameover', 'hyperspace'
+
+            // UI Elements
+            const scoreElement = document.getElementById('score');
+            const timeElement = document.getElementById('time');
+            const gameStatusElement = document.getElementById('game-status');
+            const statusMessageElement = document.getElementById('status-message');
+            const restartButton = document.getElementById('restart-button');
+            const crosshairElement = document.getElementById('crosshair');
+            const hypeButton = document.getElementById('hypeButton');
+            const hyperspaceOverlayElement = document.getElementById('hyperspace-overlay');
+
+
+            // Raycaster for shooting
+            const raycaster = new THREE.Raycaster();
+            const centerOfScreen = new THREE.Vector2(0, 0);
+
+
+            // Function to create a random color
+            function getRandomColor() {
+                const letters = '0123456789ABCDEF';
+                let color = '#';
+                for (let i = 0; i < 6; i++) {
+                    color += letters[Math.floor(Math.random() * 16)];
+                }
+                return color;
+            }
+
+            // Function to create a new target object
+            function createTarget() {
+                let geometry;
+                const objectType = Math.random();
+
+                if (objectType < 0.25) {
+                    geometry = new THREE.SphereGeometry(0.5, 32, 32);
+                } else if (objectType < 0.5) {
+                    geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+                } else if (objectType < 0.75) {
+                    geometry = new THREE.TorusGeometry(0.4, 0.2, 16, 32);
+                } else {
+                    geometry = new THREE.DodecahedronGeometry(0.6);
+                }
+
+                const material = new THREE.MeshPhongMaterial({ color: getRandomColor() });
+                const target = new THREE.Mesh(geometry, material);
+
+                // Position targets relative to the camera's current position
+                const spawnDistance = 20; // How far in front of the camera to spawn
+                const spread = 5; // How much to spread targets around the center
+                const cameraDirection = new THREE.Vector3();
+                camera.getWorldDirection(cameraDirection); // Get camera's forward direction
+
+                target.position.copy(camera.position).add(cameraDirection.multiplyScalar(spawnDistance));
+                target.position.x += (Math.random() - 0.5) * spread;
+                target.position.y += (Math.random() - 0.5) * spread;
+                target.position.z += (Math.random() - 0.5) * spread;
+
+
+                // Set random velocity (targets will move and bounce)
+                target.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.08, // Slightly faster targets
+                    (Math.random() - 0.5) * 0.08,
+                    (Math.random() - 0.5) * 0.08
+                );
+
+                 // Set random rotation speed
+                target.rotationSpeed = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.03,
+                    (Math.random() - 0.5) * 0.03,
+                    (Math.random() - 0.5) * 0.03
+                );
+
+                scene.add(target);
+                targets.push(target);
+                console.log("Target created and added to scene.", target.position.toArray()); // Log position
+            }
+
+             // Function to handle target hit (explosion effect and removal)
+            function handleTargetHit(target) { // Renamed function to avoid conflict
+                console.log("Target hit:", target); // Log hit
+                hitSound.play();
+                score += 10; // Increase score
+                console.log("Score after hit:", score); // Log score after incrementing
+                scoreElement.textContent = score; // Update UI
+
+                // Simple explosion effect: scale down rapidly and change color
+                const originalScale = target.scale.clone();
+                const originalColor = target.material.color.clone();
+
+                // Animate scale and color change
+                if (typeof TWEEN !== 'undefined') { // Check if TWEEN is loaded
+                    new TWEEN.Tween(target.scale)
+                        .to({ x: 0.01, y: 0.01, z: 0.01 }, 200) // Scale down over 200ms
+                        .easing(TWEEN.Easing.Quadratic.Out)
+                        .start();
+
+                     new TWEEN.Tween(target.material.color)
+                        .to({ r: 1, g: 0, b: 0 }, 100) // Flash red
+                        .repeat(1) // Flash once
+                        .yoyo(true) // Go back to original color
+                        .start();
+                }
+
+
+                // Remove the target from the scene and array after the effect
+                setTimeout(() => {
+                    removeTarget(target);
+                    createTarget(); // Create a new target after one is removed
+                }, 200); // Remove after 200ms (matches scale animation)
+            }
+
+
+            // Function to remove a target (used internally after hit effect)
+            function removeTarget(target) {
+                const index = targets.indexOf(target);
+                if (index !== -1) {
+                    targets.splice(index, 1);
+                    scene.remove(target);
+                    // Dispose of geometry and material to free up memory
+                    target.geometry.dispose();
+                    if (Array.isArray(target.material)) {
+                        target.material.forEach(material => material.dispose());
+                    } else {
+                        target.material.dispose();
+                    }
+                    console.log("Target removed. Total targets:", targets.length);
+                }
+            }
+
+            // Function to create a bullet
+            function createBullet() {
+                const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
+
+                // Position the bullet at the camera's position
+                bullet.position.copy(camera.position);
+
+                // Set the bullet's velocity to move forward from the camera
+                const forwardVector = new THREE.Vector3(0, 0, -1);
+                camera.getWorldDirection(forwardVector);
+                bullet.velocity = forwardVector.multiplyScalar(bulletSpeed);
+
+                // Add bullet to the scene and bullets array
+                scene.add(bullet);
+                bullets.push(bullet);
+
+                // Remove bullet after a certain lifespan
+                setTimeout(() => {
+                    removeBullet(bullet);
+                }, bulletLifespan);
+            }
+
+            // Function to remove a bullet
+            function removeBullet(bullet) {
+                 const index = bullets.indexOf(bullet);
+                if (index !== -1) {
+                    bullets.splice(index, 1);
+                    scene.remove(bullet);
+                    bullet.geometry.dispose();
+                    bullet.material.dispose();
+                }
+            }
+
+            // Function to trigger hyperspace jump
+            function hyperspaceJump() {
+                if (gameState === 'playing') {
+                    console.log("Initiating hyperspace jump!");
+                    gameState = 'hyperspace';
+                    hyperspaceSound.play();
+
+                    // Stop the game timer temporarily
+                    clearInterval(gameInterval);
+
+                    // Hide targets and bullets during jump
+                    targets.forEach(target => target.visible = false);
+                    bullets.forEach(bullet => bullet.visible = false);
+
+                    // Hide the regular starfield
+                    starField.visible = false;
+
+                    // Create and show temporary hyperspace lines
+                    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 1 }); // Cyan color
+
+                    for (let i = 0; i < tempHyperspaceLineCount; i++) {
+                        const startPoint = new THREE.Vector3(
+                            camera.position.x + (Math.random() - 0.5) * 20, // Start closer to camera
+                            camera.position.y + (Math.random() - 0.5) * 20,
+                            camera.position.z + (Math.random() * 10) // Start slightly in front
+                        );
+
+                        // Direction shooting outwards from the camera's perspective
+                        const direction = new THREE.Vector3(
+                             (Math.random() - 0.5) * 2, // Spread outwards
+                             (Math.random() - 0.5) * 2,
+                             -1 // Primarily move forward (negative Z)
+                        ).normalize();
+
+                        const endPoint = startPoint.clone().add(direction.multiplyScalar(tempHyperspaceLineLength));
+
+                        const geometry = new THREE.BufferGeometry().setFromPoints([startPoint, endPoint]);
+                        const line = new THREE.Line(geometry, lineMaterial);
+
+                        // Store direction for animation
+                        line.userData.direction = direction;
+
+                        scene.add(line);
+                        tempHyperspaceLines.push(line);
+                    }
+                    console.log(`Created ${tempHyperspaceLineCount} temporary hyperspace lines.`);
+
+                    // Temporarily change the renderer clear color for a brighter effect
+                    renderer.setClearColor(0x222222, 1); // Dark gray background during jump
+
+
+                    // Simulate jump duration
+                    setTimeout(() => {
+                        console.log("Exiting hyperspace.");
+
+                        // Restore black background
+                        renderer.setClearColor(0x000000, 1);
+
+                        // Remove temporary hyperspace lines
+                        tempHyperspaceLines.forEach(line => {
+                            scene.remove(line);
+                            line.geometry.dispose();
+                            line.material.dispose();
+                        });
+                        tempHyperspaceLines.length = 0;
+
+                        // Show the regular starfield
+                        starField.visible = true;
+
+
+                        // Clear existing targets and bullets
+                        targets.forEach(target => {
+                            scene.remove(target);
+                            target.geometry.dispose();
+                            if (Array.isArray(target.material)) {
+                                target.material.forEach(material => material.dispose());
+                            } else {
+                                target.material.dispose();
+                            }
+                        });
+                        targets.length = 0;
+
+                         bullets.forEach(bullet => {
+                            scene.remove(bullet);
+                            bullet.geometry.dispose();
+                            bullet.material.dispose();
+                         });
+                         bullets.length = 0;
+
+                        // Create a new "minefield" of targets
+                        for (let i = 0; i < initialTargetCount; i++) {
+                            createTarget();
+                        }
+                         console.log(`Created ${initialTargetCount} new targets after jump.`);
+
+
+                        // Reset camera position slightly (optional, to simulate landing in a new spot)
+                        camera.position.set(
+                            camera.position.x + (Math.random() - 0.5) * 50,
+                            camera.position.y + (Math.random() - 0.5) * 50,
+                            camera.position.z + (Math.random() - 0.5) * 50
+                        );
+                         console.log("Camera landed at:", camera.position.toArray());
+
+
+                        // Resume game state and timer
+                        gameState = 'playing';
+                         gameInterval = setInterval(() => {
+                            gameTime--;
+                            timeElement.textContent = gameTime;
+                            if (gameTime <= 0) {
+                                endGame();
+                            }
+                        }, 1000);
+
+                    }, 2000); // Hyperspace jump lasts for 2 seconds
+                }
+            }
+
+
+            // Function to start the game
+            function startGame() {
+                console.log("startGame function called."); // Log startGame call
+                score = 0;
+                gameTime = 60;
+                scoreElement.textContent = score;
+                timeElement.textContent = gameTime;
+                gameState = 'playing';
+                gameStatusElement.style.display = 'none';
+                crosshairElement.style.display = 'block'; // Show crosshair
+
+                // Remove any existing targets
+                targets.forEach(target => {
+                    scene.remove(target);
+                     target.geometry.dispose();
+                     if (Array.isArray(target.material)) {
+                        target.material.forEach(material => material.dispose());
+                    } else {
+                        target.material.dispose();
+                    }
+                });
+                targets.length = 0; // Clear the array
+                console.log("Cleared existing targets."); // Log target clearing
+
+                 // Remove any existing bullets
+                bullets.forEach(bullet => {
+                    scene.remove(bullet);
+                    bullet.geometry.dispose();
+                    bullet.material.dispose();
+                });
+                bullets.length = 0; // Clear the array
+
+                // Remove any existing temporary hyperspace tunnel elements
+                 hyperspaceTunnelElements.forEach(element => {
+                    scene.remove(element);
+                    element.geometry.dispose();
+                    element.material.dispose();
+                 });
+                 hyperspaceTunnelElements.length = 0;
+
+
+                // Create initial targets
+                for (let i = 0; i < initialTargetCount; i++) {
+                    createTarget();
+                }
+                console.log(`Created ${initialTargetCount} initial targets.`); // Log initial target creation count
+                console.log("Current targets array:", targets); // Log the targets array
+
+                // Position the camera for the cockpit view
+                camera.position.set(0, 0, 0); // Start at the origin
+                console.log("Camera position set to:", camera.position.toArray()); // Log camera position
+
+
+                // Start the game timer
+                gameInterval = setInterval(() => {
+                    gameTime--;
+                    timeElement.textContent = gameTime;
+                    if (gameTime <= 0) {
+                        endGame();
+                    }
+                }, 1000);
+
+                console.log("Game started.");
+            }
+
+            // Function to end the game
+            function endGame() {
+                gameState = 'gameover';
+                clearInterval(gameInterval);
+                statusMessageElement.textContent = `Game Over! Your score: ${score}`;
+                gameStatusElement.style.display = 'flex'; // Show game over screen
+                crosshairElement.style.display = 'none'; // Hide crosshair
+                gameOverSound.play();
+                 controls.unlock(); // Unlock pointer
+                console.log("Game over.");
+            }
+
+            // Handle mouse click for shooting
+            function onMouseClick() {
+                if (gameState !== 'playing') return; // Only shoot when playing
+
+                createBullet(); // Create and fire a bullet
+                shootSound.play(); // Play shoot sound immediately
+
+                // The raycasting for hitting targets will now be done by the bullet's movement logic
+            }
+
+            // Animation loop
+            const travelSpeed = 0.1; // Speed of forward movement
+            const tempHyperspaceLineMoveSpeed = 50; // Speed at which temporary lines extend
+
+
+            function animate() {
+                requestAnimationFrame(animate);
+
+                // PointerLockControls handles camera rotation based on mouse movement
+
+                // Simulate forward movement only when playing
+                if (gameState === 'playing') {
+                     const forwardVector = new THREE.Vector3(0, 0, -1); // Forward is typically -Z in Three.js
+                     camera.getWorldDirection(forwardVector); // Get the camera's current forward direction
+                     camera.position.addScaledVector(forwardVector, travelSpeed);
+
+                    // Move stars backward relative to camera
+                    starField.position.copy(camera.position).multiplyScalar(-1); // Move stars opposite to camera
+
+                    // Update target positions
+                    targets.forEach(target => {
+                        target.position.add(target.velocity);
+
+                        // --- Boundary Check and Respawn ---
+                        // Check if target is too far behind the camera and respawn it
+                        const distanceBehind = camera.position.z - target.position.z;
+                        if (distanceBehind > 20) { // If target is more than 20 units behind the camera
+                             removeTarget(target);
+                             createTarget(); // Create a new target
+                        }
+
+                        // Simple bounce off a virtual box around the camera (adjust size as needed)
+                        const boundarySize = 15; // Size of the virtual box
+                        const halfBoundary = boundarySize / 2;
+                        const objectSize = new THREE.Box3().setFromObject(target).getSize(new THREE.Vector3());
+                        const objectRadius = Math.max(objectSize.x, objectSize.y, objectSize.z) / 2;
+
+                        // Check against boundaries relative to the camera's position
+                        if (target.position.x > camera.position.x + halfBoundary - objectRadius || target.position.x < camera.position.x - halfBoundary + objectRadius) {
+                            target.velocity.x *= -1;
+                             target.position.x = Math.max(camera.position.x - halfBoundary + objectRadius, Math.min(camera.position.x + halfBoundary - objectRadius, target.position.x));
+                        }
+                        if (target.position.y > camera.position.y + halfBoundary - objectRadius || target.position.y < camera.position.y - halfBoundary + objectRadius) {
+                            target.velocity.y *= -1;
+                            target.position.y = Math.max(camera.position.y - halfBoundary + objectRadius, Math.min(camera.position.y + halfBoundary - objectRadius, target.position.y));
+                        }
+                         // Z-axis bouncing relative to camera position
+                        if (target.position.z > camera.position.z + halfBoundary - objectRadius || target.position.z < camera.position.z - halfBoundary + objectRadius) {
+                            target.velocity.z *= -1;
+                            target.position.z = Math.max(camera.position.z - halfBoundary + objectRadius, Math.min(camera.position.z + halfBoundary - objectRadius, target.position.z));
+                        }
+                        // --- End Boundary Check ---
+
+
+                        // Rotate the target
+                        target.rotation.x += target.rotationSpeed.x;
+                            target.rotation.y += target.rotationSpeed.y;
+                            target.rotation.z += target.rotationSpeed.z;
+                        });
+
+                        // Update bullet positions and check for hits
+                        for (let i = bullets.length - 1; i >= 0; i--) {
+                            const bullet = bullets[i];
+                            bullet.position.add(bullet.velocity);
+
+                            // Check for collision with targets
+                            const bulletBox = new THREE.Box3().setFromObject(bullet);
+
+                            for (let j = targets.length - 1; j >= 0; j--) {
+                                const target = targets[j];
+                                const targetBox = new THREE.Box3().setFromObject(target);
+
+                                if (bulletBox.intersectsBox(targetBox)) {
+                                    // Collision detected!
+                                    handleTargetHit(target); // Handle target hit effects and scoring
+                                    removeBullet(bullet); // Remove the bullet
+                                    break; // Exit inner loop since bullet is removed
+                                }
+                            }
+
+                             // Remove bullet if it travels too far (beyond the virtual boundary)
+                            const distanceToCamera = bullet.position.distanceTo(camera.position);
+                            if (distanceToCamera > 25) { // If bullet is more than 25 units from the camera
+                                 removeBullet(bullet);
+                            }
+                        }
+                    } else if (gameState === 'hyperspace') {
+                        console.log("Animating temporary hyperspace lines..."); // Log to confirm this block is running
+                        // Animate temporary hyperspace lines
+                        tempHyperspaceLines.forEach(line => {
+                            const positions = line.geometry.attributes.position.array;
+                            const startPoint = new THREE.Vector3(positions[0], positions[1], positions[2]);
+                            const endPoint = new THREE.Vector3(positions[3], positions[4], positions[5]);
+                            const direction = line.userData.direction;
+
+                            // Move both start and end points outwards
+                            startPoint.addScaledVector(direction, tempHyperspaceLineMoveSpeed);
+                            endPoint.addScaledVector(direction, tempHyperspaceLineMoveSpeed);
+
+                            // Update the positions in the geometry
+                            positions[0] = startPoint.x;
+                            positions[1] = startPoint.y;
+                            positions[2] = startPoint.z;
+                            positions[3] = endPoint.x;
+                            positions[4] = endPoint.y;
+                            positions[5] = endPoint.z;
+
+                            line.geometry.attributes.position.needsUpdate = true;
+
+                             // Log positions for a few lines to debug motion
+                             if (tempHyperspaceLines.indexOf(line) < 5) { // Log for the first 5 lines
+                                 console.log(`Temp Line ${tempHyperspaceLines.indexOf(line)}: Start [${positions[0].toFixed(2)}, ${positions[1].toFixed(2)}, ${positions[2].toFixed(2)}] -> End [${positions[3].toFixed(2)}, ${positions[4].toFixed(2)}, ${positions[5].toFixed(2)}]`);
+                             }
+                        });
+                         console.log("Temporary hyperspace line geometry updated."); // Log that update flag is set
+                         console.log("Temporary hyperspace material opacity:", tempHyperspaceLines.length > 0 ? tempHyperspaceLines[0].material.opacity : 'N/A'); // Log opacity (check if array is not empty)
+
+                    }
+
+                     // Update TWEEN for animations
+                    TWEEN.update();
+
+
+                    // Render the scene with the main camera
+                    renderer.render(scene, camera);
+                }
+
+                // Handle window resizing
+                window.addEventListener('resize', () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                    renderer.setPixelRatio(window.devicePixelRatio);
+                });
+
+                // Add event listener for mouse clicks on the document for shooting
+                document.addEventListener('click', onMouseClick, false);
+
+                // Add event listener for restart button
+                restartButton.addEventListener('click', startGame);
+
+                // Add event listener for Hype button
+                hypeButton.addEventListener('click', hyperspaceJump);
+
+
+                // Handle pointer lock change to show/hide UI
+                controls.addEventListener('lock', function () {
+                    console.log("Pointer locked."); // Log pointer lock
+                    gameStatusElement.style.display = 'none';
+                    crosshairElement.style.display = 'block';
+                    if (gameState === 'start') {
+                         startGame(); // Start game when pointer is locked for the first time
+                    }
+                });
+
+                controls.addEventListener('unlock', function () {
+                    console.log("Pointer unlocked."); // Log pointer unlock
+                    if (gameState === 'playing') {
+                         // Pause game or show pause menu if needed when unlocked
+                         // For now, just hide crosshair
+                         crosshairElement.style.display = 'none';
+                    }
+                });
+
+                // Include TWEEN.js for animations
+                const tweenScript = document.createElement('script');
+                tweenScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js';
+                document.head.appendChild(tweenScript);
+
+
+                 // Start the animation on window load.
+                window.onload = function () {
+                    console.log("Window loaded, starting animation.");
+                    animate(); // Start the render loop
+                    // Show initial game status to prompt user to start
+                    gameState = 'start';
+                    statusMessageElement.textContent = "Click anywhere to enter cockpit and Start!";
+                    gameStatusElement.style.display = 'flex';
+                    crosshairElement.style.display = 'none'; // Hide crosshair initially
+                }
+
+            } catch (error) {
+                console.error("An error occurred during Three.js setup or animation:", error);
+            }
+
+
+        </script>
+    </body>
+    </html>
