@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Bouncing Box</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // Set up the scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x404040, 2); // soft white light
+        scene.add(ambientLight);
+
+        // Add directional light
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(1, 1, 1).normalize();
+        scene.add(directionalLight);
+
+        // Create the box geometry and material
+        const boxSize = 10;
+        const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+        const boxMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            wireframe: true, // Show as a wireframe box
+            transparent: true,
+            opacity: 0.2 // Make it slightly transparent
+        });
+        const box = new THREE.Mesh(boxGeometry, boxMaterial);
+        scene.add(box);
+
+        // Array to hold the bouncing objects
+        const objects = [];
+        const objectCount = 20; // Number of objects
+
+        // Function to create a random color
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        // Create bouncing objects
+        for (let i = 0; i < objectCount; i++) {
+            let geometry;
+            const objectType = Math.random();
+
+            if (objectType < 0.33) {
+                // Sphere
+                geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            } else if (objectType < 0.66) {
+                // Cube
+                geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+            } else {
+                // Torus
+                geometry = new THREE.TorusGeometry(0.4, 0.2, 16, 32);
+            }
+
+            const material = new THREE.MeshPhongMaterial({ color: getRandomColor() });
+            const object = new THREE.Mesh(geometry, material);
+
+            // Set initial random position within the box boundaries
+            object.position.x = (Math.random() - 0.5) * (boxSize - 1);
+            object.position.y = (Math.random() - 0.5) * (boxSize - 1);
+            object.position.z = (Math.random() - 0.5) * (boxSize - 1);
+
+            // Set initial random velocity
+            object.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.05,
+                (Math.random() - 0.5) * 0.05,
+                (Math.random() - 0.5) * 0.05
+            );
+
+            // Set initial random rotation speed
+            object.rotationSpeed = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.02,
+                (Math.random() - 0.5) * 0.02,
+                (Math.random() - 0.5) * 0.02
+            );
+
+            scene.add(object);
+            objects.push(object);
+        }
+
+        // Position the camera
+        camera.position.z = boxSize * 1.5;
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update object positions and rotations
+            objects.forEach(object => {
+                object.position.add(object.velocity);
+
+                // Bounce off the box walls
+                if (object.position.x > boxSize / 2 - 0.5 || object.position.x < -boxSize / 2 + 0.5) {
+                    object.velocity.x *= -1;
+                }
+                if (object.position.y > boxSize / 2 - 0.5 || object.position.y < -boxSize / 2 + 0.5) {
+                    object.velocity.y *= -1;
+                }
+                if (object.position.z > boxSize / 2 - 0.5 || object.position.z < -boxSize / 2 + 0.5) {
+                    object.velocity.z *= -1;
+                }
+
+                // Rotate the object
+                object.rotation.x += object.rotationSpeed.x;
+                object.rotation.y += object.rotationSpeed.y;
+                object.rotation.z += object.rotationSpeed.z;
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start the animation on window load.
+        window.onload = function () {
+            animate();
+        }
+
+    </script>
+</body>
+</html>
