@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Bouncing Box (Mirrored)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: sans-serif; color: #fff;}
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 10; /* Ensure controls are above the canvas */
+        }
+        #controls button, #controls input[type="range"] {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            background-color: #555;
+            color: white;
+        }
+         #controls button:hover {
+            background-color: #777;
+        }
+         #controls label {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <h2>Controls</h2>
+        <button id="addObjectBtn">Add Object</button>
+        <button id="removeObjectBtn">Remove Object</button>
+        <div>
+            <label for="speedControl">Speed:</label>
+            <input type="range" id="speedControl" min="0.01" max="0.2" step="0.005" value="0.05">
+        </div>
+         <div>
+            <label for="rotationSpeedControl">Rotation Speed:</label>
+            <input type="range" id="rotationSpeedControl" min="0.005" max="0.05" step="0.001" value="0.02">
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script> <script>
+        console.log("Main script block started."); // Log to confirm script block is reached
+
+        // Check if THREE object is available after loading the library
+        if (typeof THREE === 'undefined') {
+            console.error("THREE.js library not loaded correctly!");
+        } else {
+            console.log("THREE.js library loaded successfully."); // Confirm Three.js is available
+        }
+
+        try {
+            // Set up the scene, camera, and renderer
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio); // Improve rendering quality on high-density displays
+            renderer.setClearColor(0x1a1a1a, 1); // Explicitly set background color
+            document.body.appendChild(renderer.domElement);
+
+            console.log("Renderer canvas appended to body."); // Log to confirm canvas is added
+
+            // Add OrbitControls for camera interaction
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Smooth camera movement
+            controls.dampingFactor = 0.25;
+            controls.screenSpacePanning = false;
+            controls.maxPolarAngle = Math.PI / 2; // Prevent looking straight up or down
+
+            // Add ambient light (increased intensity)
+            const ambientLight = new THREE.AmbientLight(0x404040, 5); // soft white light, intensity increased
+            scene.add(ambientLight);
+
+            // Add directional light (increased intensity)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2); // white light, intensity increased
+            directionalLight.position.set(1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            // Create the box geometry
+            const boxSize = 10;
+            const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+
+            // Create a WebGLCubeRenderTarget for the CubeCamera
+            const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, { // resolution
+                format: THREE.RGBFormat,
+                generateMipmaps: true,
+                minFilter: THREE.LinearMipmapLinearFilter
+            });
+
+            // Create a CubeCamera for reflections, now using the render target
+            const cubeCamera = new THREE.CubeCamera(0.1, 1000, cubeRenderTarget); // near, far, renderTarget
+            scene.add(cubeCamera);
+
+            // Create the box material using MeshStandardMaterial for reflections
+            // envMap will be set to the CubeCamera's render target texture
+            const boxMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff, // Base color of the box
+                metalness: 1,    // Make it fully metallic for mirror effect
+                roughness: 0,      // Make it smooth for clear reflections
+                side: THREE.BackSide, // Render the inside of the box
+                envMap: cubeCamera.renderTarget.texture // Use the cube camera's texture for reflections
+            });
+            const box = new THREE.Mesh(boxGeometry, boxMaterial);
+            scene.add(box);
+            console.log("Box added to scene."); // Log box creation
+
+            // Array to hold the bouncing objects
+            const objects = [];
+            const objectCount = 20; // Initial number of objects
+
+            // Gravity effect
+            const gravity = new THREE.Vector3(0, -0.005, 0); // Downward force
+
+            // Sound effect for bouncing (using Howler.js)
+            // Note: You'll need to replace 'bounce.mp3' with a path to an actual sound file
+            // or use a data URL. For simplicity, we'll use a placeholder.
+            const bounceSound = new Howl({
+                src: ['https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/sounds/impact.ogg'], // Example sound URL
+                volume: 0.5
+            });
+
+
+            // Function to create a random color
+            function getRandomColor() {
+                const letters = '0123456789ABCDEF';
+                let color = '#';
+                for (let i = 0; i < 6; i++) {
+                    color += letters[Math.floor(Math.random() * 16)];
+                }
+                return color;
+            }
+
+            // Function to create a new bouncing object
+            function createObject() {
+                let geometry;
+                const objectType = Math.random();
+
+                if (objectType < 0.25) {
+                    // Sphere
+                    geometry = new THREE.SphereGeometry(0.5, 32, 32);
+                } else if (objectType < 0.5) {
+                    // Cube
+                    geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+                } else if (objectType < 0.75) {
+                    // Torus
+                    geometry = new THREE.TorusGeometry(0.4, 0.2, 16, 32);
+                } else {
+                     // Dodecahedron
+                    geometry = new THREE.DodecahedronGeometry(0.6);
+                }
+
+
+                // Use MeshStandardMaterial for objects to interact better with reflections (changed from MeshPhongMaterial)
+                const material = new THREE.MeshStandardMaterial({
+                     color: getRandomColor(),
+                     metalness: 0.1, // Slight metalness for some reflection
+                     roughness: 0.5 // Some roughness
+                });
+                const object = new THREE.Mesh(geometry, material);
+
+                // Set initial random position within the box boundaries
+                object.position.x = (Math.random() - 0.5) * (boxSize - 2); // Adjusted boundary slightly
+                object.position.y = (Math.random() - 0.5) * (boxSize - 2); // Adjusted boundary slightly
+                object.position.z = (Math.random() - 0.5) * (boxSize - 2); // Adjusted boundary slightly
+
+                // Get current speed and rotation speed from controls
+                const speed = parseFloat(document.getElementById('speedControl').value);
+                const rotationSpeed = parseFloat(document.getElementById('rotationSpeedControl').value);
+
+                // Set initial random velocity based on control value
+                object.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * speed * 2,
+                    (Math.random() - 0.5) * speed * 2,
+                    (Math.random() - 0.5) * speed * 2
+                );
+
+                // Set initial random rotation speed based on control value
+                object.rotationSpeed = new THREE.Vector3(
+                    (Math.random() - 0.5) * rotationSpeed,
+                    (Math.random() - 0.5) * rotationSpeed,
+                    (Math.random() - 0.5) * rotationSpeed
+                );
+
+                // Add trail geometry
+                const trailGeometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(100 * 3); // 100 points * 3 components (x, y, z)
+                trailGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const trailMaterial = new THREE.LineBasicMaterial({ color: object.material.color, transparent: true, opacity: 0.5 });
+                const trail = new THREE.Line(trailGeometry, trailMaterial);
+                trail.positionHistory = []; // Store past positions
+                trail.maxHistory = 100; // Number of points in the trail
+                object.userData.trail = trail; // Link trail to object
+                scene.add(trail);
+
+
+                scene.add(object);
+                objects.push(object);
+                console.log("Object added. Total objects:", objects.length);
+            }
+
+            // Create initial bouncing objects
+            for (let i = 0; i < objectCount; i++) {
+                createObject();
+            }
+            console.log(`${objectCount} initial objects created.`); // Log object count
+
+            // Position the camera to look inside the box
+            camera.position.set(0, 0, boxSize * 1.5); // Moved camera back slightly for better view
+            camera.lookAt(0, 0, 0); // Look at the center of the box
+            console.log("Camera positioned."); // Log camera position
+
+            // Get control elements
+            const addObjectBtn = document.getElementById('addObjectBtn');
+            const removeObjectBtn = document.getElementById('removeObjectBtn');
+            const speedControl = document.getElementById('speedControl');
+            const rotationSpeedControl = document.getElementById('rotationSpeedControl');
+
+            // Add event listeners for controls
+            addObjectBtn.addEventListener('click', createObject);
+            removeObjectBtn.addEventListener('click', () => {
+                if (objects.length > 0) {
+                    const objectToRemove = objects.pop();
+                    scene.remove(objectToRemove.userData.trail); // Remove trail
+                    scene.remove(objectToRemove);
+                    console.log("Object removed. Total objects:", objects.length);
+                } else {
+                    console.log("No objects to remove.");
+                }
+            });
+
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+
+                // Update OrbitControls
+                controls.update();
+
+                // Hide the box itself when rendering the cube camera to avoid self-reflection issues
+                box.visible = false;
+                // Update the CubeCamera to capture the current scene state
+                cubeCamera.update(renderer, scene);
+                // Make the box visible again for the main render
+                box.visible = true;
+
+                // Get current speed and rotation speed from controls
+                const currentSpeed = parseFloat(speedControl.value);
+                const currentRotationSpeed = parseFloat(rotationSpeedControl.value);
+
+
+                // Update object positions and rotations
+                objects.forEach(object => {
+                    // Apply gravity
+                    object.velocity.add(gravity);
+
+                    // Update position
+                    object.position.add(object.velocity);
+
+                    // Bounce off the box walls (considering object size)
+                    const halfBox = boxSize / 2;
+                    // Attempt to get object size, fallback to estimate
+                    const objectSize = new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());
+                    const objectRadius = Math.max(objectSize.x, objectSize.y, objectSize.z) / 2;
+
+                    let bounced = false;
+                    if (object.position.x > halfBox - objectRadius || object.position.x < -halfBox + objectRadius) {
+                        object.velocity.x *= -1;
+                        // Adjust position slightly to prevent sticking
+                        object.position.x = Math.max(-halfBox + objectRadius, Math.min(halfBox - objectRadius, object.position.x));
+                        bounced = true;
+                    }
+                    if (object.position.y > halfBox - objectRadius || object.position.y < -halfBox + objectRadius) {
+                        object.velocity.y *= -1;
+                         // Adjust position slightly to prevent sticking
+                        object.position.y = Math.max(-halfBox + objectRadius, Math.min(halfBox - objectRadius, object.position.y));
+                         bounced = true;
+                    }
+                    if (object.position.z > halfBox - objectRadius || object.position.z < -halfBox + objectRadius) {
+                        object.velocity.z *= -1;
+                         // Adjust position slightly to prevent sticking
+                        object.position.z = Math.max(-halfBox + objectRadius, Math.min(halfBox - objectRadius, object.position.z));
+                         bounced = true;
+                    }
+
+                    // Play bounce sound if bounced
+                    if (bounced) {
+                       bounceSound.play();
+                    }
+
+                    // Update rotation based on control value
+                    object.rotation.x += object.rotationSpeed.x * (currentRotationSpeed / 0.02); // Scale rotation by control value
+                    object.rotation.y += object.rotationSpeed.y * (currentRotationSpeed / 0.02);
+                    object.rotation.z += object.rotationSpeed.z * (currentRotationSpeed / 0.02);
+
+                    // Update trail
+                    object.userData.trail.positionHistory.push(object.position.clone());
+                    if (object.userData.trail.positionHistory.length > object.userData.trail.maxHistory) {
+                        object.userData.trail.positionHistory.shift();
+                    }
+                    const positions = object.userData.trail.geometry.attributes.position.array;
+                    for (let i = 0; i < object.userData.trail.positionHistory.length; i++) {
+                        const historyPoint = object.userData.trail.positionHistory[i];
+                        positions[i * 3] = historyPoint.x;
+                        positions[i * 3 + 1] = historyPoint.y;
+                        positions[i * 3 + 2] = historyPoint.z;
+                    }
+                     // Fill remaining trail points with the last position to avoid rendering issues
+                    for (let i = object.userData.trail.positionHistory.length; i < object.userData.trail.maxHistory; i++) {
+                         const lastPoint = object.userData.trail.positionHistory[object.userData.trail.positionHistory.length - 1] || object.position;
+                         positions[i * 3] = lastPoint.x;
+                         positions[i * 3 + 1] = lastPoint.y;
+                         positions[i * 3 + 2] = lastPoint.z;
+                    }
+
+                    object.userData.trail.geometry.attributes.position.needsUpdate = true;
+                    object.userData.trail.geometry.setDrawRange(0, object.userData.trail.positionHistory.length); // Only draw the points in history
+
+                });
+
+                // Render the scene with the main camera
+                renderer.render(scene, camera);
+                // console.log("Render frame."); // Log each render call (can be noisy, uncomment if needed)
+            }
+
+            // Handle window resizing
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio); // Update pixel ratio on resize
+            });
+
+             // Start the animation on window load.
+            window.onload = function () {
+                console.log("Window loaded, starting animation."); // Log animation start
+                animate();
+            }
+
+        } catch (error) {
+            console.error("An error occurred during Three.js setup or animation:", error);
+        }
+
+
+    </script>
+</body>
+</html>
