@@ -11,4 +11,4 @@ stage 3 https://pdragonlabs.github.io/BounceBox/index3.html
 stage 4 https://pdragonlabs.github.io/BounceBox/index4.html
 stage 5 https://pdragonlabs.github.io/BounceBox/index5.html
 stage 6 https://pdragonlabs.github.io/BounceBox/index6.html
- 
+stage 8 https://pdragonlabs.github.io/BounceBox/index8.html
